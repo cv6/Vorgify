@@ -6,7 +6,8 @@ from datetime import datetime
 from moviepy import VideoFileClip
 from threading import Thread
 from PIL import Image, ImageTk
-from tkinter import filedialog
+from tkinter import filedialog, Menu
+import tkinter as tk
 import utils
 import logger as plogger
 import renderer
@@ -20,11 +21,11 @@ def resource_path(relative_path):
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.abspath(__file__))
 
     return os.path.join(base_path, relative_path)
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "cv6 (Hoffi)"
 
 # Theme Colors (Logo Based)
@@ -78,7 +79,7 @@ class VorgifyApp(ctk.CTk):
         self.title(loc.get_text("app_title"))
         try: self.iconbitmap(resource_path("vorgify_logo.ico"))
         except: pass
-        self.geometry("950x1050") # Resized to fit content
+        self.geometry("950x1100") # Resized to fit content
         self.configure(fg_color=COLOR_BG)
 
         # --- Data ---
@@ -101,8 +102,47 @@ class VorgifyApp(ctk.CTk):
         self.preview_clip = None
         self.is_playing_preview = False
         self.preview_start_time = 0
+        self.settings_window = None
+        self.quality_window = None
+        self.about_window = None
+        self.active_menu = None # Track open menu
+        
+        # Quality Settings Defaults
+        self.quality_settings = {
+            "Preview": {"preset": "ultrafast", "method": "Bitrate", "value": "5000k"},
+            "Full": {"preset": "slow", "method": "CRF", "value": "16"}
+        }
 
         # --- UI LAYOUT ---
+        # CUSTOM MENU BAR
+        self.menu_bar = ctk.CTkFrame(self, height=30, fg_color="#2b2b2b", corner_radius=0)
+        self.menu_bar.pack(side="top", fill="x")
+        
+        # Menu Buttons (File, Settings, Info)
+        self.btn_menu_file = self._create_menu_btn(self.menu_bar, "menu_file", self._toggle_file_menu)
+        self.btn_menu_file.pack(side="left", padx=2)
+        
+        self.btn_menu_settings = self._create_menu_btn(self.menu_bar, "menu_settings", self._toggle_settings_menu)
+        self.btn_menu_settings.pack(side="left", padx=2)
+        
+        self.btn_menu_info = self._create_menu_btn(self.menu_bar, "menu_info", self._toggle_info_menu)
+        self.btn_menu_info.pack(side="left", padx=2)
+
+        # Dropdown Frames (Hidden by default, placed absolutely)
+        self.dropdown_file = self._create_dropdown_frame()
+        self._add_menu_item(self.dropdown_file, "menu_source", self.browse_source_folder)
+        self._add_menu_item(self.dropdown_file, "menu_dest", self.browse_destination)
+        
+        self.dropdown_settings = self._create_dropdown_frame()
+        self._add_menu_item(self.dropdown_settings, "menu_language", self.open_settings)
+        self._add_menu_item(self.dropdown_settings, "menu_quality", self.open_quality_settings)
+        
+        self.dropdown_info = self._create_dropdown_frame()
+        self._add_menu_item(self.dropdown_info, "menu_about", self.open_about)
+
+        # Bind click elsewhere to close menus
+        self.bind("<Button-1>", self._close_all_menus)
+
         # Logo & Title Header
         self.logo_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.logo_frame.pack(pady=(15, 5))
@@ -118,10 +158,13 @@ class VorgifyApp(ctk.CTk):
         self.label = ctk.CTkLabel(self.logo_frame, text=loc.get_text("header_logo_text"), font=FONT_HEADER)
         self.label.pack(side="left")
 
+
         # 1. LIST
         self.list_container = ctk.CTkFrame(self, fg_color=COLOR_BG)
         self.list_container.pack(pady=5, padx=20, fill="x")
         
+
+
         self.header_frame = ctk.CTkFrame(self.list_container, fg_color=COLOR_BG)
         self.header_frame.pack(fill="x", pady=(0, 5))
         ctk.CTkLabel(self.header_frame, text=loc.get_text("library_title"), font=FONT_MAIN).pack(side="left")
@@ -132,8 +175,6 @@ class VorgifyApp(ctk.CTk):
         self.btn_all = ctk.CTkButton(self.header_frame, text=loc.get_text("btn_all"), width=DIM_BTN_W_SMALL, height=DIM_BTN_H_NORMAL, fg_color=COLOR_BUTTON_GRAY, font=FONT_SMALL, command=self.select_all)
         self.btn_all.pack(side="right", padx=5)
         
-        self.btn_about = ctk.CTkButton(self.header_frame, text=loc.get_text("btn_info"), width=DIM_BTN_W_SMALL, height=DIM_BTN_H_NORMAL, fg_color=COLOR_BUTTON_CLOSE, font=FONT_SMALL, command=self.open_about)
-        self.btn_about.pack(side="right", padx=5)
         
         # Source Path Label
         self.lbl_source_path = ctk.CTkLabel(self.header_frame, text=self.shorten_path(self.source_folder), text_color=COLOR_TEXT_GRAY, font=FONT_SMALL)
@@ -141,7 +182,6 @@ class VorgifyApp(ctk.CTk):
 
         self.list_frame = ctk.CTkScrollableFrame(self.list_container, width=800, height=DIM_LIST_H) # Reduced height
         self.list_frame.pack(fill="x")
-        self.scan_durations_and_refresh()
 
         # 2. DETAIL AREA (Split View)
         self.detail_container = ctk.CTkFrame(self, width=800, height=DIM_DETAIL_H, fg_color=COLOR_PANEL)
@@ -195,7 +235,8 @@ class VorgifyApp(ctk.CTk):
         self.row1 = ctk.CTkFrame(self.global_frame, fg_color="transparent")
         self.row1.pack(fill="x", padx=10, pady=5)
 # ... (rest of row 1 logic in separate edits if needed, but I need to inject the duration label FIRST).
-        ctk.CTkLabel(self.row1, text=loc.get_text("lbl_global_speed"), font=FONT_MAIN).pack(side="left")
+        self.lbl_global_speed_text = ctk.CTkLabel(self.row1, text=loc.get_text("lbl_global_speed"), font=FONT_MAIN)
+        self.lbl_global_speed_text.pack(side="left")
         self.lbl_global_speed = ctk.CTkLabel(self.row1, text="1.00x", font=FONT_MAIN, text_color=COLOR_ACCENT)
         self.lbl_global_speed.pack(side="right")
         self.slider_global = ctk.CTkSlider(self.global_frame, from_=0.2, to=3.0, command=self.update_global_label)
@@ -231,7 +272,8 @@ class VorgifyApp(ctk.CTk):
         self.row3.pack(fill="x", pady=10, padx=20)
         
         # Filename (Smaller)
-        ctk.CTkLabel(self.row3, text=loc.get_text("lbl_filename"), font=FONT_MAIN).pack(side="left", padx=(0, 10))
+        self.lbl_filename = ctk.CTkLabel(self.row3, text=loc.get_text("lbl_filename"), font=FONT_MAIN)
+        self.lbl_filename.pack(side="left", padx=(0, 10))
         self.entry_filename = ctk.CTkEntry(self.row3, placeholder_text=loc.get_text("placeholder_filename"), font=FONT_MAIN, width=200) # Reduced width
         self.entry_filename.pack(side="left", padx=5)
         default_name = f"vorgify_final_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -272,12 +314,23 @@ class VorgifyApp(ctk.CTk):
         # REMOVED: self.lbl_status ("Bereit." removed)
 
         self.calculate_total_time()
-
-        self.calculate_total_time()
+        self.refresh_text()
 
     # --- PROGRESS LOGIC ---
-    def update_progress_safe(self, val, text_msg):
-        self.after(0, lambda: self._update_ui(val, text_msg))
+    def update_progress_safe(self, progress, status_text=None):
+        def _update():
+            try:
+                # Ensure progress is between 0 and 1
+                p = max(0.0, min(1.0, float(progress)))
+                self.progress_bar.set(p)
+                if status_text:
+                    self.lbl_prog_text.configure(text=status_text)
+                    self.lbl_prog_text.lift() # Ensure visibility
+                self.update_idletasks()
+            except Exception as e:
+                print(f"UI Update Error: {e}")
+        
+        self.after(0, _update)
 
     def _update_ui(self, val, text_msg):
         self.progress_bar.set(val)
@@ -458,6 +511,9 @@ class VorgifyApp(ctk.CTk):
         if hasattr(self, 'lbl_loading'):
             self.lbl_loading.destroy()
             
+        # Safety clear to prevent duplicates if threads overlapped
+        for w in self.list_frame.winfo_children(): w.destroy()
+            
         self.btn_source.configure(state="normal")
         
         total_files = len(self.video_files)
@@ -510,6 +566,124 @@ class VorgifyApp(ctk.CTk):
             if f not in self.clip_settings:
                 self.clip_settings[f] = {"speed": 1.0, "reverse": False}
         
+    def open_settings(self):
+        if self.settings_window is None or not self.settings_window.winfo_exists():
+            self.settings_window = SettingsWindow(self)
+        else:
+            self.settings_window.focus()
+
+    def change_language(self, lang_code):
+        loc.set_language(lang_code)
+        self.refresh_text()
+
+    def create_menu(self):
+        # Native menu removed
+        pass
+
+    def _create_menu_btn(self, parent, text_key, command):
+        return ctk.CTkButton(parent, text=loc.get_text(text_key), command=command, 
+                             fg_color="transparent", hover_color="#3a3a3a", 
+                             corner_radius=0, width=60, font=FONT_MAIN)
+
+    def _create_dropdown_frame(self):
+        fr = ctk.CTkFrame(self, fg_color="#2b2b2b", corner_radius=0, border_width=1, border_color="#3a3a3a")
+        return fr
+
+    def _add_menu_item(self, parent, text_key, command):
+        btn = ctk.CTkButton(parent, text=loc.get_text(text_key), command=lambda: [command(), self._close_all_menus(None)],
+                            fg_color="transparent", hover_color="#3a3a3a", anchor="w",
+                            corner_radius=0, width=150, font=FONT_MAIN)
+        btn.pack(fill="x")
+        # Store key for refresh
+        btn._text_key = text_key
+        return btn
+
+    def _toggle_menu(self, btn, dropdown):
+        if self.active_menu == dropdown:
+            self._close_all_menus(None)
+        else:
+            self._close_all_menus(None)
+            # Position below button
+            x = btn.winfo_rootx() - self.winfo_rootx()
+            y = btn.winfo_rooty() - self.winfo_rooty() + btn.winfo_height()
+            dropdown.place(x=x, y=y)
+            dropdown.lift()
+            self.active_menu = dropdown
+
+    def _toggle_file_menu(self): self._toggle_menu(self.btn_menu_file, self.dropdown_file)
+    def _toggle_settings_menu(self): self._toggle_menu(self.btn_menu_settings, self.dropdown_settings)
+    def _toggle_info_menu(self): self._toggle_menu(self.btn_menu_info, self.dropdown_info)
+
+    def _close_all_menus(self, event):
+        if event and hasattr(event, "widget"):
+            # Check if clicked widget is part of menu system (traverse up)
+            widget = event.widget
+            try:
+                while widget and widget != self:
+                    if widget == self.menu_bar:
+                        return # Click on menu bar, let toggle handle it
+                    if widget in [self.dropdown_file, self.dropdown_settings, self.dropdown_info]:
+                        return # Click on dropdown, let item command handle it
+                    widget = widget.master
+            except AttributeError:
+                pass
+
+        if self.active_menu:
+            self.active_menu.place_forget()
+            self.active_menu = None
+
+    def refresh_text(self):
+        # Menu Bar Text
+        self.btn_menu_file.configure(text=loc.get_text("menu_file"))
+        self.btn_menu_settings.configure(text=loc.get_text("menu_settings"))
+        self.btn_menu_info.configure(text=loc.get_text("menu_info"))
+        
+        # Dropdown Texts
+        for drop in [self.dropdown_file, self.dropdown_settings, self.dropdown_info]:
+            for widget in drop.winfo_children():
+                if hasattr(widget, '_text_key'):
+                     widget.configure(text=loc.get_text(widget._text_key))
+
+        # Header
+        self.title(loc.get_text("app_title"))
+        self.label.configure(text=loc.get_text("header_logo_text"))
+        
+        # List Header
+        # Note: We need a reference to the title label which was packed directly
+        for widget in self.header_frame.winfo_children():
+            if isinstance(widget, ctk.CTkLabel) and widget != self.lbl_source_path:
+                 widget.configure(text=loc.get_text("library_title"))
+                 break
+
+        self.btn_source.configure(text=loc.get_text("btn_select_folder"))
+        self.btn_none.configure(text=loc.get_text("btn_none"))
+        self.btn_all.configure(text=loc.get_text("btn_all"))
+        # self.btn_about removed
+
+        # Details
+        self.rebuild_preview_label(text=loc.get_text("lbl_no_clip")) # Updates empty state text
+        if self.selected_file:
+             self.btn_play_preview.configure(text=loc.get_text("btn_stop" if self.is_playing_preview else "btn_play"))
+             
+        self.lbl_speed.configure(text=loc.get_text("lbl_clip_speed", self.clip_settings.get(self.selected_file, {}).get('speed', 1.0) if self.selected_file else 1.0))
+        self.chk_reverse.configure(text=loc.get_text("chk_reverse"))
+        self.btn_close.configure(text=loc.get_text("btn_deselect"))
+
+        # Global
+        self.lbl_global_speed_text.configure(text=loc.get_text("lbl_global_speed"))
+        self.lbl_fade_in.configure(text=loc.get_text("lbl_fade_in", self.slider_fade_in.get()))
+        self.lbl_cross.configure(text=loc.get_text("lbl_crossfade", self.slider_cross.get()))
+        self.lbl_fade_out.configure(text=loc.get_text("lbl_fade_out", self.slider_fade_out.get()))
+        self.chk_audio.configure(text=loc.get_text("chk_remove_audio"))
+        # self.seg_mode.configure(values=[loc.get_text("mode_preview"), loc.get_text("mode_full")]) 
+
+        self.lbl_filename.configure(text=loc.get_text("lbl_filename"))
+        self.entry_filename.configure(placeholder_text=loc.get_text("placeholder_filename"))
+        self.btn_dest.configure(text=loc.get_text("btn_destination_fmt", self.shorten_path(self.destination_folder)))
+        
+        self.btn_render.configure(text=loc.get_text("btn_start_render").upper())
+        self.scan_durations_and_refresh() # Refresh estimates
+
     def browse_source_folder(self):
         folder = filedialog.askdirectory(initialdir=self.source_folder, title=loc.get_text("dialog_source_title"))
         if folder:
@@ -592,6 +766,8 @@ class VorgifyApp(ctk.CTk):
         # --- UI FIX: Unpack the container ---
         self.settings_inner_frame.pack_forget()
 
+    # update_progress_safe removed (duplicate)
+
     def start_thread(self):
         if not any(self.check_vars[f].get() for f in self.video_files): return
         if not self.is_rendering: self.is_rendering=True; self.toggle_ui(True); Thread(target=self.render, daemon=True).start()
@@ -620,9 +796,10 @@ class VorgifyApp(ctk.CTk):
                 "fade_in": self.slider_fade_in.get(),
                 "fade_out": self.slider_fade_out.get(),
                 "crossfade": self.slider_cross.get(),
-                "audio_enabled": self.var_audio.get(),
-                "mode": self.var_mode.get(),
-                "threads": 6
+                "audio_enabled": not self.var_audio.get(), # Logic is inverted in checkbox label
+                "mode": self.var_mode.get(), # "Preview" or "Full"
+                "threads": 6, # Configurable?
+                "quality_settings": self.quality_settings # Pass quality settings
             }
             
             # Ensure filename ends with mp4
@@ -633,23 +810,33 @@ class VorgifyApp(ctk.CTk):
             out_file = renderer.render_video(config, logger, lambda: self.cancel_requested)
             
             # self.lbl_status was removed
-            self.update_progress_safe(1.0, loc.get_text("status_done"))
+            # self.status_bar removed
         
         except Exception as e:
             msg = str(e)
             if "Abbruch" in msg: self.update_progress_safe(0, loc.get_text("status_cancelled"))
             else: self.update_progress_safe(0, loc.get_text("status_error", msg))
         finally:
+            self.update_progress_safe(1.0, loc.get_text("status_done"))
             self.is_rendering = False
             self.after(2000, lambda: self.toggle_ui(False))
 
+    def open_quality_settings(self):
+        if self.quality_window is None or not self.quality_window.winfo_exists():
+            self.quality_window = QualitySettingsWindow(self)
+        else:
+            self.quality_window.focus()
+
     def open_about(self):
-        AboutWindow(self)
+        if self.about_window is None or not self.about_window.winfo_exists():
+            self.about_window = AboutWindow(self)
+        else:
+            self.about_window.focus()
 
 class AboutWindow(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("About Vorgify")
+        self.title(loc.get_text("about_title"))
         self.geometry("400x550")
         self.configure(fg_color=COLOR_BG)
         self.resizable(False, False)
@@ -665,21 +852,146 @@ class AboutWindow(ctk.CTkToplevel):
             ctk.CTkLabel(self, text="[Vorgify Logo]", font=FONT_HEADER, text_color=COLOR_TEXT).pack(pady=20)
 
         ctk.CTkLabel(self, text=loc.get_text("about_title"), font=FONT_HEADER, text_color=COLOR_TEXT).pack(pady=(0,5))
-
         ctk.CTkLabel(self, text=f"{loc.get_text('about_subtitle')} v{__version__}", font=FONT_MAIN, text_color=COLOR_TEXT_GRAY).pack(pady=0)
         
         ctk.CTkLabel(self, text=loc.get_text("about_community"), font=FONT_SUBHEADER, text_color=COLOR_TEXT).pack(pady=(30, 5))
         
-        link = ctk.CTkLabel(self, text="forum.dice-dragons.de", font=("Roboto", 14, "underline"), text_color=COLOR_TEXT_HIGHLIGHT, cursor="hand2")
-        link.pack()
+        # Link
+        link = ctk.CTkLabel(self, text="Veo Studio Discord", font=FONT_MAIN, text_color=COLOR_ACCENT, cursor="hand2")
+        link.pack(pady=5)
+        link.bind("<Button-1>", lambda e: webbrowser.open("https://discord.gg/veostudio"))
+
+        ctk.CTkButton(self, text=loc.get_text("btn_close"), command=self.destroy, width=DIM_BTN_W_ACTION, height=DIM_BTN_H_ACTION, fg_color=COLOR_BUTTON_DARK, font=FONT_MAIN).pack(side="bottom", pady=20)
+
+class SettingsWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title(loc.get_text("settings_title"))
+        self.geometry("400x300")
+        
+        # Center the window
+        # ... logic to center if desired, but CTk usually handles placement okay
+        
+        self.lang_var = ctk.StringVar(value=loc.current_language)
+        
+        self.row_lang = ctk.CTkFrame(self, fg_color="transparent")
+        self.row_lang.pack(pady=20, padx=20, fill="x")
+        
+        ctk.CTkLabel(self.row_lang, text=loc.get_text("lbl_language"), font=FONT_MAIN).pack(side="left", padx=10)
+        self.lang_menu = ctk.CTkOptionMenu(self.row_lang, values=loc.get_available_languages(), command=self.change_language, variable=self.lang_var)
+        self.lang_menu.pack(side="right", padx=10, pady=10)
+
+        ctk.CTkButton(self, text=loc.get_text("btn_close"), command=self.destroy, fg_color=COLOR_BUTTON_GRAY).pack(side="bottom", pady=20)
+        
+        # Set Icon
+        # Set Icon
+        try:
+            self.iconbitmap(resource_path("vorgify_logo.ico"))
+        except Exception as e: print(f"Icon error: {e}")
+
+    def change_language(self, choice):
+        self.parent.change_language(choice)
+
+class QualitySettingsWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title(loc.get_text("quality_title"))
+        self.geometry("500x500")
+        
+        self.settings = parent.quality_settings # Reference
+        self.widgets = {}
+        
+        # Layout
+        self._build_section("Preview", loc.get_text("lbl_preview_settings"))
+        ctk.CTkFrame(self, height=2, fg_color="gray").pack(fill="x", padx=20, pady=10)
+        self._build_section("Full", loc.get_text("lbl_full_settings"))
+        
+        # Save Button
+        ctk.CTkButton(self, text=loc.get_text("btn_save"), command=self.save_and_close, fg_color=COLOR_SUCCESS, hover_color=COLOR_SUCCESS_HOVER).pack(pady=20)
+        
+        # Set Icon
+        try:
+            self.iconbitmap(resource_path("vorgify_logo.ico"))
+        except Exception as e: print(f"Icon error: {e}")
+
+    def _build_section(self, mode_key, title):
+        frame = ctk.CTkFrame(self, fg_color="transparent")
+        frame.pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkLabel(frame, text=title, font=FONT_SUBHEADER).pack(anchor="w", pady=(5, 10))
+        
+        data = self.settings[mode_key]
+        
+        # Preset
+        row1 = ctk.CTkFrame(frame, fg_color="transparent")
+        row1.pack(fill="x", pady=2)
+        ctk.CTkLabel(row1, text=loc.get_text("lbl_preset"), width=150, anchor="w").pack(side="left")
+        var_preset = ctk.StringVar(value=data["preset"])
+        om_preset = ctk.CTkOptionMenu(row1, values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], variable=var_preset)
+        om_preset.pack(side="right", fill="x", expand=True)
+        
+        # Method
+        row2 = ctk.CTkFrame(frame, fg_color="transparent")
+        row2.pack(fill="x", pady=2)
+        ctk.CTkLabel(row2, text=loc.get_text("lbl_method"), width=150, anchor="w").pack(side="left")
+        var_method = ctk.StringVar(value=data["method"])
+        seg_method = ctk.CTkSegmentedButton(row2, values=["Bitrate", "CRF"], variable=var_method)
+        seg_method.pack(side="right", fill="x", expand=True)
+        
+        # Value
+        row3 = ctk.CTkFrame(frame, fg_color="transparent")
+        row3.pack(fill="x", pady=2)
+        ctk.CTkLabel(row3, text=loc.get_text("lbl_value"), width=150, anchor="w").pack(side="left")
+        entry_val = ctk.CTkEntry(row3)
+        entry_val.insert(0, data["value"])
+        entry_val.pack(side="right", fill="x", expand=True)
+        
+        self.widgets[mode_key] = {
+            "preset": var_preset,
+            "method": var_method,
+            "value": entry_val
+        }
+
+    def save_and_close(self):
+        # Update parent settings
+        for mode in ["Preview", "Full"]:
+            self.parent.quality_settings[mode]["preset"] = self.widgets[mode]["preset"].get()
+            self.parent.quality_settings[mode]["method"] = self.widgets[mode]["method"].get()
+            self.parent.quality_settings[mode]["value"] = self.widgets[mode]["value"].get()
+        
+        self.destroy()
+
+class AboutWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title(loc.get_text("about_title"))
+        self.geometry("400x550")
+        self.configure(fg_color=COLOR_BG)
+        self.resizable(False, False)
+        
+        # Logo
+        try:
+            img = Image.open(resource_path("vorgify_logo.png"))
+            img.thumbnail((250, 250), Image.Resampling.LANCZOS)
+            self.logo_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
+            ctk.CTkLabel(self, text="", image=self.logo_img).pack(pady=20)
+        except Exception as e:
+            print(f"Logo error: {e}")
+            ctk.CTkLabel(self, text="[Vorgify Logo]", font=FONT_HEADER, text_color=COLOR_TEXT).pack(pady=20)
+
+        ctk.CTkLabel(self, text=loc.get_text("about_title"), font=FONT_HEADER, text_color=COLOR_TEXT).pack(pady=(0,5))
+        ctk.CTkLabel(self, text=f"{loc.get_text('about_subtitle')} v{__version__}", font=FONT_MAIN, text_color=COLOR_TEXT_GRAY).pack(pady=0)
+        
+        ctk.CTkLabel(self, text=loc.get_text("about_community"), font=FONT_SUBHEADER, text_color=COLOR_TEXT).pack(pady=(30, 5))
+        
+        # Link
+        link = ctk.CTkLabel(self, text="Dice & Dragons - Support", font=FONT_MAIN, text_color=COLOR_ACCENT, cursor="hand2")
+        link.pack(pady=5)
         link.bind("<Button-1>", lambda e: webbrowser.open("https://forum.dice-dragons.de"))
-        
-        ctk.CTkButton(self, text=loc.get_text("btn_close"), width=DIM_BTN_W_ACTION, height=DIM_BTN_H_ACTION, fg_color=COLOR_BUTTON_DARK, font=FONT_MAIN, command=self.destroy).pack(side="bottom", pady=20)
-        
-        # Make modal
-        self.transient(parent)
-        self.grab_set()
-        self.focus_force()            
+
+        ctk.CTkButton(self, text=loc.get_text("btn_close"), command=self.destroy, width=DIM_BTN_W_ACTION, height=DIM_BTN_H_ACTION, fg_color=COLOR_BUTTON_DARK, font=FONT_MAIN).pack(side="bottom", pady=20)
 
 if __name__ == "__main__":
     app = VorgifyApp()

@@ -81,10 +81,40 @@ def render_video(config, logger, cancel_check_callback):
             "audio_codec": "aac"
         }
         
-        if config["mode"] == "Preview":
-            fin.write_videofile(**p, preset="ultrafast", bitrate="5000k")
+        mode_key = config["mode"] # "Preview" or "Full"
+        
+        # Fallback if "Full" matches something else or casing differs
+        if mode_key not in ["Preview", "Full"]:
+            # If standard modes are used in config but we need to match settings keys
+            # App sends "Preview" or "Full", should be fine.
+            if mode_key != "Preview": mode_key = "Full"
+
+        q_settings = config["quality_settings"][mode_key]
+        
+        preset = q_settings["preset"]
+        method = q_settings["method"] # "Bitrate" or "CRF"
+        val = q_settings["value"]
+        
+        # Build params
+        ffmpeg_params = []
+        bitrate = None
+        
+        if method == "CRF":
+             ffmpeg_params.extend(["-crf", val])
         else:
-            fin.write_videofile(**p, preset="slow", ffmpeg_params=["-crf", "16"])
+             bitrate = val # e.g. "5000k"
+        
+        fin.write_videofile(
+            filename=out_file,
+            codec="libx264",
+            audio=not no_aud,
+            audio_codec="aac",
+            preset=preset,
+            bitrate=bitrate,
+            ffmpeg_params=ffmpeg_params if ffmpeg_params else None,
+            threads=config.get("threads", 6),
+            logger=logger
+        )
             
         return out_file
 

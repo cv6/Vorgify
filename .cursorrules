@@ -12,6 +12,7 @@ Vorgify ist ein High-Performance Video-Automatisierungstool (Merge, Speed, Rever
 - **UI Stabilität:** Der Bereich `detail_container` (rechte Seite) muss eine feste Höhe behalten, um Layout-Sprünge zu verhindern. Nutze `pack_propagate(False)` auf dem Parent-Frame.
 - **GC Safety (WICHTIG):** Halte Bildreferenzen (z.B. Thumbnails in `ctk.CTkImage`) ZWINGEND in Instanz-Variablen (z.B. `self.current_image_ref`), sonst werden sie vom Garbage Collector gelöscht, was zu Abstürzen führt ("pyimage doesn't exist").
 - **Threading:** Rendering-Aufrufe an MoviePy (`write_videofile`) dürfen NIEMALS im Main-Thread laufen, da sonst die GUI einfriert. Nutze immer `threading.Thread`.
+- **Code Standards** Folge immeer den Grundsätzen KISS und DRY.
 
 ## Progress & Cancel Logik
 

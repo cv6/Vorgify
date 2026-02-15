@@ -14,6 +14,26 @@ TRANSLATIONS = {
         "en": "VORGIFY",
         "de": "VORGIFY"
     },
+    # Menu Config
+    "menu_file": { "en": "File", "de": "Datei" },
+    "menu_settings": { "en": "Settings", "de": "Einstellungen" },
+    "menu_info": { "en": "Info", "de": "Info" },
+    "menu_source": { "en": "Source Folder", "de": "Quellordner" },
+    "menu_dest": { "en": "Destination Folder", "de": "Zielordner" },
+    "menu_language": { "en": "Language", "de": "Sprache" },
+    "menu_quality": { "en": "Video Quality", "de": "Videoqualität" },
+    "menu_about": { "en": "About", "de": "Über" },
+
+    "quality_title": { "en": "Video Quality Settings", "de": "Videoqualität Einstellungen" },
+    "lbl_preview_settings": { "en": "Preview Mode", "de": "Vorschau-Modus" },
+    "lbl_full_settings": { "en": "Full Render Mode", "de": "Render-Modus (Final)" },
+    "lbl_preset": { "en": "Preset (Speed/Size)", "de": "Preset (Geschw./Größe)" },
+    "lbl_method": { "en": "Method", "de": "Methode" },
+    "lbl_value": { "en": "Value", "de": "Wert" },
+    "val_bitrate": { "en": "Bitrate", "de": "Bitrate" },
+    "val_crf": { "en": "CRF (Quality)", "de": "CRF (Qualität)" },
+    "btn_save": { "en": "Save", "de": "Speichern" },
+
     "library_title": {
         "en": "Clip Library",
         "de": "Clip-Bibliothek"
@@ -175,6 +195,22 @@ TRANSLATIONS = {
     "btn_close": {
         "en": "Close",
         "de": "Schließen"
+    },
+    "btn_settings": {
+        "en": "⚙ Settings",
+        "de": "⚙ Einstellungen"
+    },
+    "settings_title": {
+        "en": "Settings",
+        "de": "Einstellungen"
+    },
+    "lbl_language": {
+        "en": "Language",
+        "de": "Sprache"
+    },
+    "settings_general_title": {
+        "en": "General",
+        "de": "Allgemein"
     }
 }
 
@@ -197,3 +233,14 @@ def set_language(lang_code):
     global current_language
     if lang_code in ["en", "de"]:
         current_language = lang_code
+
+def get_available_languages():
+    return ["en", "de"]
+
+def get_language_name(code):
+    names = {
+        "en": "English",
+        "de": "Deutsch"
+    }
+    return names.get(code, code.upper())
+
