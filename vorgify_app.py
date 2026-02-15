@@ -12,6 +12,20 @@ import logger as plogger
 import renderer
 import webbrowser
 import localization as loc
+import sys
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+__version__ = "1.0.0"
+__author__ = "cv6 (Hoffi)"
 
 # Theme Colors (Logo Based)
 COLOR_BG = "#191921"
@@ -55,12 +69,15 @@ ctk.set_default_color_theme("blue") # We will override specific colors anyway
 
 
 
-# --- HAUPT APP ---
+# --- MAIN APP ---
 class VorgifyApp(ctk.CTk):
+
     def __init__(self):
         super().__init__()
 
         self.title(loc.get_text("app_title"))
+        try: self.iconbitmap(resource_path("vorgify_logo.ico"))
+        except: pass
         self.geometry("950x1050") # Resized to fit content
         self.configure(fg_color=COLOR_BG)
 
@@ -91,7 +108,7 @@ class VorgifyApp(ctk.CTk):
         self.logo_frame.pack(pady=(15, 5))
         
         try:
-            pil_img = Image.open("vorgify_logo.png")
+            pil_img = Image.open(resource_path("vorgify_logo.png"))
             pil_img.thumbnail((50, 50), Image.Resampling.LANCZOS)
             self.header_logo = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=pil_img.size)
             ctk.CTkLabel(self.logo_frame, text="", image=self.header_logo).pack(side="left", padx=10)
@@ -101,7 +118,7 @@ class VorgifyApp(ctk.CTk):
         self.label = ctk.CTkLabel(self.logo_frame, text=loc.get_text("header_logo_text"), font=FONT_HEADER)
         self.label.pack(side="left")
 
-        # 1. LISTE
+        # 1. LIST
         self.list_container = ctk.CTkFrame(self, fg_color=COLOR_BG)
         self.list_container.pack(pady=5, padx=20, fill="x")
         
@@ -126,7 +143,7 @@ class VorgifyApp(ctk.CTk):
         self.list_frame.pack(fill="x")
         self.scan_durations_and_refresh()
 
-        # 2. DETAIL BEREICH (Split View)
+        # 2. DETAIL AREA (Split View)
         self.detail_container = ctk.CTkFrame(self, width=800, height=DIM_DETAIL_H, fg_color=COLOR_PANEL)
         self.detail_container.pack(pady=10, padx=20)
         self.detail_container.pack_propagate(False) 
@@ -135,7 +152,7 @@ class VorgifyApp(ctk.CTk):
         self.detail_container.grid_columnconfigure(1, weight=1, uniform="group1")
         self.detail_container.grid_rowconfigure(0, weight=1)
 
-        # Links: Vorschau
+        # Left: Preview
         self.preview_frame = ctk.CTkFrame(self.detail_container, fg_color="transparent")
         self.preview_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
@@ -145,7 +162,7 @@ class VorgifyApp(ctk.CTk):
 
         self.rebuild_preview_label(text=loc.get_text("lbl_no_clip"))
 
-        # Rechts: Settings
+        # Right: Settings
         self.settings_frame = ctk.CTkFrame(self.detail_container, fg_color="transparent")
         self.settings_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         
@@ -375,7 +392,8 @@ class VorgifyApp(ctk.CTk):
             img = Image.fromarray(frame)
             img.thumbnail((360, 300), Image.Resampling.NEAREST) # Nearest for speed
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
-            self.lbl_preview_image.configure(image=ctk_img)
+            self.current_preview_image_ref = ctk_img # Keep reference to avoid GC
+            self.lbl_preview_image.configure(image=self.current_preview_image_ref)
             
             # Schedule next update (approx 15fps = 66ms, 24fps = 41ms)
             self.after(50, self.update_preview_loop)
@@ -631,14 +649,14 @@ class VorgifyApp(ctk.CTk):
 class AboutWindow(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("Über Vorgify")
+        self.title("About Vorgify")
         self.geometry("400x550")
         self.configure(fg_color=COLOR_BG)
         self.resizable(False, False)
         
         # Logo
         try:
-            img = Image.open("vorgify_logo.png")
+            img = Image.open(resource_path("vorgify_logo.png"))
             img.thumbnail((250, 250), Image.Resampling.LANCZOS)
             self.logo_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
             ctk.CTkLabel(self, text="", image=self.logo_img).pack(pady=20)
@@ -647,7 +665,8 @@ class AboutWindow(ctk.CTkToplevel):
             ctk.CTkLabel(self, text="[Vorgify Logo]", font=FONT_HEADER, text_color=COLOR_TEXT).pack(pady=20)
 
         ctk.CTkLabel(self, text=loc.get_text("about_title"), font=FONT_HEADER, text_color=COLOR_TEXT).pack(pady=(0,5))
-        ctk.CTkLabel(self, text=loc.get_text("about_subtitle"), font=FONT_MAIN, text_color=COLOR_TEXT_GRAY).pack(pady=0)
+
+        ctk.CTkLabel(self, text=f"{loc.get_text('about_subtitle')} v{__version__}", font=FONT_MAIN, text_color=COLOR_TEXT_GRAY).pack(pady=0)
         
         ctk.CTkLabel(self, text=loc.get_text("about_community"), font=FONT_SUBHEADER, text_color=COLOR_TEXT).pack(pady=(30, 5))
         

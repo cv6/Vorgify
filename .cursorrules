@@ -2,36 +2,74 @@
 
 Ein Python-basiertes Video-Editing-Tool mit GUI, spezialisiert auf das schnelle Zusammenfügen und Bearbeiten von MP4-Clips (z.B. von Google Veo).
 
+## Projekt-Kontext
+
+Vorgify ist ein High-Performance Video-Automatisierungstool (Merge, Speed, Reverse) auf Basis von `customtkinter` (GUI) und `moviepy` (Engine), optimiert für Windows (NVMe/Ryzen).
+
+## Entwicklungsgrundsätze (Code)
+
+- **Naming:** Das Projekt heißt "Vorgify". Alle Titel und Labels in der GUI müssen diesen Namen verwenden.
+- **UI Stabilität:** Der Bereich `detail_container` (rechte Seite) muss eine feste Höhe behalten, um Layout-Sprünge zu verhindern. Nutze `pack_propagate(False)` auf dem Parent-Frame.
+- **GC Safety (WICHTIG):** Halte Bildreferenzen (z.B. Thumbnails in `ctk.CTkImage`) ZWINGEND in Instanz-Variablen (z.B. `self.current_image_ref`), sonst werden sie vom Garbage Collector gelöscht, was zu Abstürzen führt ("pyimage doesn't exist").
+- **Threading:** Rendering-Aufrufe an MoviePy (`write_videofile`) dürfen NIEMALS im Main-Thread laufen, da sonst die GUI einfriert. Nutze immer `threading.Thread`.
+
+## Progress & Cancel Logik
+
+- Der Fortschritt wird über einen eigenen Logger (`MyBarLogger` Klasse) von MoviePy an die CustomTkinter-ProgressBar übergeben. GUI-Updates müssen via `.after()` in den Main-Thread geschoben werden.
+- Das Abbrechen ("Cancel") wird über ein `threading.Event` (z.B. `self.cancel_event`) gesteuert. Die Render-Schleife und der Logger müssen dieses Event regelmäßig prüfen und bei Aktivierung sofort terminieren.
+
+## Code-Stil
+
+- Kommentare: Englisch.
+- GUI-Texte: Englisch and German seperated in a trnalation file.
+- Architektur: Strikte Trennung von GUI-Aufbau (`__init__`, `setup_ui`) und Business-Logik (Event-Handler, Rendering-Funktionen).
+
+## Build & Deployment (NEU & KRITISCH)
+
+- **Single Source of Truth:** Das Erstellen der auslieferbaren Windows-EXE erfolgt AUSSCHLIESSLICH durch Ausführen der Datei `make.bat`. Versuche nicht, eigene PyInstaller-Befehle zu erfinden.
+- **Versionierung:** Das Skript enthält die Variablen `__version__` und `__author__`. Diese müssen bei jeder Änderung aktualisiert werden. Zeige die Versionsnummer im About Fenster an.
+- **PyInstaller Requirements:** Falls die `make.bat` angepasst werden muss, beachte zwingend:
+    1. **Metadaten:** Es MÜSSEN die Argumente `--copy-metadata=imageio` und `--copy-metadata=moviepy` verwendet werden. Ohne diese stürzt die EXE beim Start mit `importlib.metadata.PackageNotFoundError` ab.
+    2. **Icon:** Das App-Icon ist `vorgify_logo.ico`.
+    3. **Konsole:** Nutze `--noconsole` für einen sauberen GUI-Start.
+    4. **Versionierung:** Nutze die Variablen `__version__` um der finalen .exe Datei einen Suffix mit der Versionsnummer zu geben. z.B. `vorgify_v1.0.0.exe`.
+
 ## 🚀 Status Quo
-Das Skript `veo_studio.py` ist eine voll funktionsfähige `customtkinter` Anwendung.
+
+Das Skript `vorgify_app.py` ist eine voll funktionsfähige `customtkinter` Anwendung.
 
 **Aktuelle Features:**
-* **Auto-Import:** Liest automatisch alle `.mp4` Dateien im Ordner.
-* **Batch-Verarbeitung:** Zusammenfügen (Concatenate) mit Crossfades.
-* **Individuelle Kontrolle:** Speed & Reverse pro Clip einstellbar.
-* **Globale Effekte:** Global Speed, Fade In/Out, Überblenddauer.
-* **GUI:** Dark Mode, Vorschaubilder (Smart-Crop), Drag&Drop-Ersatz durch Sortier-Buttons.
-* **Performance:** Multithreading Rendering mit `moviepy` und `proglog` Integration für Progress-Bar.
-* **Selection:** Checkboxen zum An-/Abwählen einzelner Clips.
-* **Time Calculation:** Echtzeit-Berechnung der voraussichtlichen Videolänge.
+
+- **Auto-Import:** Liest automatisch alle `.mp4` Dateien im Ordner.
+- **Batch-Verarbeitung:** Zusammenfügen (Concatenate) mit Crossfades.
+- **Individuelle Kontrolle:** Speed & Reverse pro Clip einstellbar.
+- **Globale Effekte:** Global Speed, Fade In/Out, Überblenddauer.
+- **GUI:** Dark Mode, Vorschaubilder (Smart-Crop), Drag&Drop-Ersatz durch Sortier-Buttons.
+- **Performance:** Multithreading Rendering mit `moviepy` und `proglog` Integration für Progress-Bar.
+- **Selection:** Checkboxen zum An-/Abwählen einzelner Clips.
+- **Time Calculation:** Echtzeit-Berechnung der voraussichtlichen Videolänge.
 
 ## 🛠 Tech Stack
-* **Python 3.10+**
-* **GUI:** `customtkinter`, `tkinter`, `Pillow` (PIL)
-* **Video Engine:** `moviepy` (v1.0.3 oder kompatibel), `proglog`
-* **System:** Windows optimiert (NVMe Support Logik)
+
+- **Python 3.10+**
+- **GUI:** `customtkinter`, `tkinter`, `Pillow` (PIL)
+- **Video Engine:** `moviepy` (v1.0.3 oder kompatibel), `proglog`
+- **System:** Windows optimiert (NVMe Support Logik)
 
 ## 📋 To-Do / Bekannte Issues
+
 1. **UI Glitches:** Manchmal verschwinden Elemente im Detail-Panel (rechter Bereich), wenn man wild zwischen Clips wechselt. Die `.pack()` Logik muss robust geprüft werden.
 2. **Audio:** Das Rendern von Audio bei sehr vielen Clips kann hängen (MoviePy `chunk` Problem).
 3. **Memory:** Vorschaubilder werden gecacht, Garbage Collection muss sauber laufen (`self.current_image`).
 
 ## 📦 Installation
+
 ```bash
 pip install moviepy customtkinter pillow proglog
 ```
 
 ## 🎮 Bedienung
+
 1. Skript im Ordner mit den Videos starten.
 2. Clips auswählen/abwählen (Checkboxen).
 3. Klick auf Clip öffnet Details (Rechts): Speed, Reverse, Sortierung.
